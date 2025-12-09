@@ -83,8 +83,28 @@ class OnPolicyRunner:
             # Rollout
             with torch.inference_mode():
                 for _ in range(self.cfg["num_steps_per_env"]):
+
+                    if isinstance(obs, dict) or hasattr(obs, "keys"):
+                        for k, v in obs.items():
+                            if torch.isnan(v).any():
+                                msg = f"❌ NaN detected in Observation Key: '{k}'"
+                                print(msg)
+                                print(f"Value: {v}")
+                                raise ValueError(msg)
+                    elif torch.isnan(obs).any():
+                        raise ValueError("❌ NaN detected in Observation Tensor")
+                    
                     # Sample actions
                     actions = self.alg.act(obs)
+
+                    if torch.isnan(actions).any():
+                        msg = "❌ NaN detected in Actions output"
+                        print(msg)
+                        # 打印一下当前的 obs 方便排查是谁导致的
+                        # print(f"Input Obs was: {obs}") 
+                        raise ValueError(msg)
+
+
                     # Step the environment
                     obs, rewards, dones, extras = self.env.step(actions.to(self.env.device))
                     # Move to device

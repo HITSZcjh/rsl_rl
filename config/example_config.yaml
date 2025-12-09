@@ -1,19 +1,19 @@
 runner:
   class_name: OnPolicyRunner
   # General
-  num_steps_per_env: 24  # Number of steps per environment per iteration
+  num_steps_per_env: 300  # Number of steps per environment per iteration
   max_iterations: 1500  # Number of policy updates
   seed: 1
   # Observations
-  obs_groups: {"policy": ["policy"], "critic": ["policy", "privileged"]} # Maps observation groups to sets. See `vec_env.py` for more information
+  obs_groups: {"policy": ["lin_vel","att","ang_vel"], "critic": ["lin_vel","att","ang_vel"]} # Maps observation groups to sets. See `vec_env.py` for more information
   # Logging parameters
   save_interval: 50  # Check for potential saves every `save_interval` iterations
-  experiment_name: walking_experiment
+  experiment_name: hover_experiment
   run_name: ""
   # Logging writer
   logger: tensorboard  # tensorboard, neptune, wandb
-  neptune_project: legged_gym
-  wandb_project: legged_gym
+  neptune_project: quad_model
+  wandb_project: quad_model
 
   # Policy
   policy:
@@ -21,8 +21,8 @@ runner:
     activation: elu
     actor_obs_normalization: false
     critic_obs_normalization: false
-    actor_hidden_dims: [256, 256, 256]
-    critic_hidden_dims: [256, 256, 256]
+    actor_hidden_dims: [64, 64]
+    critic_hidden_dims: [64, 64]
     init_noise_std: 1.0
     noise_std_type: "scalar"  # 'scalar' or 'log'
     state_dependent_std: false

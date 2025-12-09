@@ -204,7 +204,7 @@ def resolve_rnd_config(alg_cfg: dict, obs: TensorDict, obs_groups: dict[str, lis
         alg_cfg["rnd_cfg"]["num_states"] = num_rnd_state
         alg_cfg["rnd_cfg"]["obs_groups"] = obs_groups
         # Scale down the rnd weight with timestep
-        alg_cfg["rnd_cfg"]["weight"] *= env.unwrapped.step_dt
+        alg_cfg["rnd_cfg"]["weight"] *= env.dynamics.sim_dt
     else:
         alg_cfg["rnd_cfg"] = None
     return alg_cfg

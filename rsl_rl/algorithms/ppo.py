@@ -102,7 +102,7 @@ class PPO:
         self.policy.to(self.device)
 
         # Create the optimizer
-        self.optimizer = optim.Adam(self.policy.parameters(), lr=learning_rate)
+        self.optimizer = optim.Adam(self.policy.parameters(), lr=learning_rate, eps=1e-5)
 
         # Add storage
         self.storage = storage
