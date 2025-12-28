@@ -17,6 +17,7 @@ from rsl_rl.modules import (
     ActorCritic,
     ActorCriticCNN,
     ActorCriticRecurrent,
+    DecoupledActorCriticRecurrent,
     resolve_rnd_config,
     resolve_symmetry_config,
 )
@@ -28,7 +29,13 @@ from rsl_rl.utils.logger import Logger
 class OnPolicyRunner:
     """On-policy runner for training and evaluation of actor-critic methods."""
 
-    def __init__(self, env: VecEnv, train_cfg: dict, log_dir: str | None = None, device: str = "cpu") -> None:
+    def __init__(
+        self,
+        env: VecEnv,
+        train_cfg: dict,
+        log_dir: str | None = None,
+        device: str = "cpu",
+    ) -> None:
         self.cfg = train_cfg
         self.policy_cfg = train_cfg["policy"]
         self.alg_cfg = train_cfg["algorithm"]
@@ -40,7 +47,9 @@ class OnPolicyRunner:
 
         # Query observations from environment for algorithm construction
         obs = self.env.get_observations()
-        self.cfg["obs_groups"] = resolve_obs_groups(obs, self.cfg["obs_groups"], self._get_default_obs_sets())
+        self.cfg["obs_groups"] = resolve_obs_groups(
+            obs, self.cfg["obs_groups"], self._get_default_obs_sets()
+        )
 
         # Create the algorithm
         self.alg = self._construct_algorithm(obs)
@@ -59,7 +68,9 @@ class OnPolicyRunner:
 
         self.current_learning_iteration = 0
 
-    def learn(self, num_learning_iterations: int, init_at_random_ep_len: bool = False) -> None:
+    def learn(
+        self, num_learning_iterations: int, init_at_random_ep_len: bool = False
+    ) -> None:
         # Randomize initial episode lengths (for exploration)
         if init_at_random_ep_len:
             self.env.episode_length_buf = torch.randint_like(
@@ -93,7 +104,7 @@ class OnPolicyRunner:
                                 raise ValueError(msg)
                     elif torch.isnan(obs).any():
                         raise ValueError("❌ NaN detected in Observation Tensor")
-                    
+
                     # Sample actions
                     actions = self.alg.act(obs)
 
@@ -101,20 +112,29 @@ class OnPolicyRunner:
                         msg = "❌ NaN detected in Actions output"
                         print(msg)
                         # 打印一下当前的 obs 方便排查是谁导致的
-                        # print(f"Input Obs was: {obs}") 
+                        # print(f"Input Obs was: {obs}")
                         raise ValueError(msg)
 
-
                     # Step the environment
-                    obs, rewards, dones, extras = self.env.step(actions.to(self.env.device))
+                    obs, rewards, dones, extras = self.env.step(
+                        actions.to(self.env.device)
+                    )
                     # Move to device
-                    obs, rewards, dones = (obs.to(self.device), rewards.to(self.device), dones.to(self.device))
+                    obs, rewards, dones = (
+                        obs.to(self.device),
+                        rewards.to(self.device),
+                        dones.to(self.device),
+                    )
                     # Process the step
                     self.alg.process_env_step(obs, rewards, dones, extras)
                     # Extract intrinsic rewards (only for logging)
-                    intrinsic_rewards = self.alg.intrinsic_rewards if self.alg_cfg["rnd_cfg"] else None
+                    intrinsic_rewards = (
+                        self.alg.intrinsic_rewards if self.alg_cfg["rnd_cfg"] else None
+                    )
                     # Book keeping
-                    self.logger.process_env_step(rewards, dones, extras, intrinsic_rewards)
+                    self.logger.process_env_step(
+                        rewards, dones, extras, intrinsic_rewards
+                    )
 
                 stop = time.time()
                 collect_time = stop - start
@@ -149,7 +169,11 @@ class OnPolicyRunner:
 
         # Save the final model after training
         if self.logger.log_dir is not None and not self.logger.disable_logs:
-            self.save(os.path.join(self.logger.log_dir, f"model_{self.current_learning_iteration}.pt"))
+            self.save(
+                os.path.join(
+                    self.logger.log_dir, f"model_{self.current_learning_iteration}.pt"
+                )
+            )
 
     def save(self, path: str, infos: dict | None = None) -> None:
         # Save model
@@ -163,16 +187,22 @@ class OnPolicyRunner:
         if self.alg_cfg["rnd_cfg"]:
             saved_dict["rnd_state_dict"] = self.alg.rnd.state_dict()
             if self.alg.rnd_optimizer:
-                saved_dict["rnd_optimizer_state_dict"] = self.alg.rnd_optimizer.state_dict()
+                saved_dict["rnd_optimizer_state_dict"] = (
+                    self.alg.rnd_optimizer.state_dict()
+                )
         torch.save(saved_dict, path)
 
         # Upload model to external logging services
         self.logger.save_model(path, self.current_learning_iteration)
 
-    def load(self, path: str, load_optimizer: bool = True, map_location: str | None = None) -> dict:
+    def load(
+        self, path: str, load_optimizer: bool = True, map_location: str | None = None
+    ) -> dict:
         loaded_dict = torch.load(path, weights_only=False, map_location=map_location)
         # Load model
-        resumed_training = self.alg.policy.load_state_dict(loaded_dict["model_state_dict"])
+        resumed_training = self.alg.policy.load_state_dict(
+            loaded_dict["model_state_dict"]
+        )
         # Load RND model if used
         if self.alg_cfg["rnd_cfg"]:
             self.alg.rnd.load_state_dict(loaded_dict["rnd_state_dict"])
@@ -182,7 +212,9 @@ class OnPolicyRunner:
             self.alg.optimizer.load_state_dict(loaded_dict["optimizer_state_dict"])
             # RND optimizer if used
             if self.alg_cfg["rnd_cfg"]:
-                self.alg.rnd_optimizer.load_state_dict(loaded_dict["rnd_optimizer_state_dict"])
+                self.alg.rnd_optimizer.load_state_dict(
+                    loaded_dict["rnd_optimizer_state_dict"]
+                )
         # Load current learning iteration
         if resumed_training:
             self.current_learning_iteration = loaded_dict["iter"]
@@ -262,14 +294,18 @@ class OnPolicyRunner:
             )
 
         # Initialize torch distributed
-        torch.distributed.init_process_group(backend="nccl", rank=self.gpu_global_rank, world_size=self.gpu_world_size)
+        torch.distributed.init_process_group(
+            backend="nccl", rank=self.gpu_global_rank, world_size=self.gpu_world_size
+        )
         # Set device to the local rank
         torch.cuda.set_device(self.gpu_local_rank)
 
     def _construct_algorithm(self, obs: TensorDict) -> PPO:
         """Construct the actor-critic algorithm."""
         # Resolve RND config if used
-        self.alg_cfg = resolve_rnd_config(self.alg_cfg, obs, self.cfg["obs_groups"], self.env)
+        self.alg_cfg = resolve_rnd_config(
+            self.alg_cfg, obs, self.cfg["obs_groups"], self.env
+        )
 
         # Resolve symmetry config if used
         self.alg_cfg = resolve_symmetry_config(self.alg_cfg, self.env)
@@ -282,25 +318,45 @@ class OnPolicyRunner:
                 DeprecationWarning,
             )
             if self.policy_cfg.get("actor_obs_normalization") is None:
-                self.policy_cfg["actor_obs_normalization"] = self.cfg["empirical_normalization"]
+                self.policy_cfg["actor_obs_normalization"] = self.cfg[
+                    "empirical_normalization"
+                ]
             if self.policy_cfg.get("critic_obs_normalization") is None:
-                self.policy_cfg["critic_obs_normalization"] = self.cfg["empirical_normalization"]
+                self.policy_cfg["critic_obs_normalization"] = self.cfg[
+                    "empirical_normalization"
+                ]
 
         # Initialize the policy
         actor_critic_class = eval(self.policy_cfg.pop("class_name"))
-        actor_critic: ActorCritic | ActorCriticRecurrent | ActorCriticCNN = actor_critic_class(
+        actor_critic: (
+            ActorCritic
+            | ActorCriticRecurrent
+            | ActorCriticCNN
+            | DecoupledActorCriticRecurrent
+        ) = actor_critic_class(
             obs, self.cfg["obs_groups"], self.env.num_actions, **self.policy_cfg
-        ).to(self.device)
+        ).to(
+            self.device
+        )
 
         # Initialize the storage
         storage = RolloutStorage(
-            "rl", self.env.num_envs, self.cfg["num_steps_per_env"], obs, [self.env.num_actions], self.device
+            "rl",
+            self.env.num_envs,
+            self.cfg["num_steps_per_env"],
+            obs,
+            [self.env.num_actions],
+            self.device,
         )
 
         # Initialize the algorithm
         alg_class = eval(self.alg_cfg.pop("class_name"))
         alg: PPO = alg_class(
-            actor_critic, storage, device=self.device, **self.alg_cfg, multi_gpu_cfg=self.multi_gpu_cfg
+            actor_critic,
+            storage,
+            device=self.device,
+            **self.alg_cfg,
+            multi_gpu_cfg=self.multi_gpu_cfg,
         )
 
         return alg

@@ -139,13 +139,6 @@ class ActorCriticRecurrent(nn.Module):
 
     def _update_distribution(self, obs: torch.Tensor) -> None:
 
-        # --- [Debug Check 1] 检查输入的 Observation ---
-        if torch.isnan(obs).any() or torch.isinf(obs).any():
-            print(f"[Error] Obs contains NaN or Inf!")
-            print(f"Obs - Min: {obs.min()}, Max: {obs.max()}, Mean: {obs.mean()}")
-            raise ValueError("Found NaN/Inf in 'obs' inside _update_distribution")
-        # ---------------------------------------------
-
         if self.state_dependent_std:
             # Compute mean and standard deviation
             mean_and_std = self.actor(obs)
@@ -167,72 +160,19 @@ class ActorCriticRecurrent(nn.Module):
             else:
                 raise ValueError(f"Unknown standard deviation type: {self.noise_std_type}. Should be 'scalar' or 'log'")
         
-        
-        # --- [Debug Check 2] 检查计算出的 Mean 和 Std ---
-        has_nan_mean = torch.isnan(mean).any() or torch.isinf(mean).any()
-        has_nan_std = torch.isnan(std).any() or torch.isinf(std).any()
-
         # Create distribution
         self.distribution = Normal(mean, std)
 
     def act(self, obs: TensorDict, masks: torch.Tensor | None = None, hidden_state: HiddenState = None) -> torch.Tensor:
         obs = self.get_actor_obs(obs)
 
-        # --- [Debug Check 1] 检查环境原始输出 (Raw Obs) ---
-        if torch.isnan(obs).any() or torch.isinf(obs).any():
-            print(f"[Error] Raw Obs (after get_actor_obs) contains NaN or Inf!")
-            print(f"Raw Obs - Min: {obs.min()}, Max: {obs.max()}, Mean: {obs.mean()}")
-            raise ValueError("Found NaN/Inf in raw observation inside act()")
-        # --------------------------------------------------
-
         # 2. 归一化 Observation
         obs = self.actor_obs_normalizer(obs)
-
-        # --- [Debug Check 2] 检查归一化后的数据 (Normalized Obs) ---
-        # 注意：这里最容易出问题，如果 Normalizer 的方差(std)为0，这里就会出现 NaN
-        if torch.isnan(obs).any() or torch.isinf(obs).any():
-            print(f"[Error] Normalized Obs contains NaN or Inf!")
-            print(f"Norm Obs - Min: {obs.min()}, Max: {obs.max()}")
-            raise ValueError("Found NaN/Inf after normalization inside act()")
-
-        # ================== [Debug: Check Inputs] ==================
-        def _check_tensor(tensor, name):
-            if tensor is not None:
-                if torch.isnan(tensor).any() or torch.isinf(tensor).any():
-                    print(f"[Fatal] {name} contains NaN or Inf!")
-                    print(f" - Stats: Min={tensor.min():.4f}, Max={tensor.max():.4f}, Mean={tensor.mean():.4f}")
-                    raise ValueError(f"NaN/Inf found in {name} before memory_a forward pass")
-
-        # 1. 检查 obs
-        _check_tensor(obs, "Input 'obs'")
-        
-        # 2. 检查 masks
-        _check_tensor(masks, "Input 'masks'")
-
-        # 3. 检查 hidden_state (支持 Tensor 和 Tuple/List)
-        if hidden_state is not None:
-            if isinstance(hidden_state, torch.Tensor):
-                _check_tensor(hidden_state, "Input 'hidden_state'")
-            elif isinstance(hidden_state, (tuple, list)):
-                for i, h in enumerate(hidden_state):
-                    _check_tensor(h, f"Input 'hidden_state[{i}]'")
-        # ===========================================================
 
         # === 执行原代码 ===
         out_mem = self.memory_a(obs, masks, hidden_state).squeeze(0)
         # =================
 
-        # ================== [Debug: Check Output] ==================
-        # 4. 检查输出 out_mem
-        if torch.isnan(out_mem).any() or torch.isinf(out_mem).any():
-            print(f"[Fatal] Output 'out_mem' contains NaN or Inf!")
-            print(f" - Stats: Min={out_mem.min():.4f}, Max={out_mem.max():.4f}")
-            print(f" - Note: Inputs were clean, so 'memory_a' (RNN/GRU/LSTM) exploded internally.")
-            raise ValueError("NaN/Inf found in 'out_mem' output")
-        # ===========================================================
-
-
-        # out_mem = self.memory_a(obs, masks, hidden_state).squeeze(0)
         self._update_distribution(out_mem)
         return self.distribution.sample()
 
